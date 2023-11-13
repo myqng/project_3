@@ -54,6 +54,15 @@ class Interpreter(InterpreterBase):
                 f"Function {name} taking {num_params} params not found",
             )
         return candidate_funcs[num_params]
+    
+    def __get_func_by_name_for_var(self, name):
+        if name not in self.func_name_to_ast:
+            super().error(ErrorType.NAME_ERROR, f"Function {name} not found")
+        candidate_funcs = self.func_name_to_ast[name]
+        if len(candidate_funcs) > 1:
+            super().error(ErrorType.NAME_ERROR, f"Ambiguous function asssignment to variable")
+
+        return candidate_funcs[list(candidate_funcs.keys())[0]]
 
     def __run_statements(self, statements):
         self.env.push()
@@ -106,7 +115,7 @@ class Interpreter(InterpreterBase):
         
         ref_args = {}
         for f_arg, a_arg in zip(formal_args, actual_args):
-            if (f_arg.elem_type == InterpreterBase.REFARG_DEF): 
+            if (f_arg.elem_type == InterpreterBase.REFARG_DEF):
                 if (f_arg.get("name") == a_arg.get("name")):
                     ref_args[f_arg.get("name")] = self.env.get(f_arg.get("name"))
                 else:
@@ -163,6 +172,8 @@ class Interpreter(InterpreterBase):
         if expr_ast.elem_type == InterpreterBase.VAR_DEF:
             var_name = expr_ast.get("name")
             val = self.env.get(var_name)
+            if (var_name in self.func_name_to_ast):
+                val = self.__get_func_by_name_for_var(var_name)
             if val is None:
                 super().error(ErrorType.NAME_ERROR, f"Variable {var_name} not found")
             return val
@@ -178,6 +189,22 @@ class Interpreter(InterpreterBase):
     def __eval_op(self, arith_ast):
         left_value_obj = self.__eval_expr(arith_ast.get("op1"))
         right_value_obj = self.__eval_expr(arith_ast.get("op2"))
+
+        # print("**")
+        # print(left_value_obj)
+        # print(right_value_obj)
+        # print(type(left_value_obj).__name__ == "Element")
+
+        # Create value objects if var is a function
+        if (type(left_value_obj).__name__ != "Value"):
+                left_value_obj = create_value(left_value_obj)
+        if (type(right_value_obj).__name__ != "Value"):
+                right_value_obj = create_value(right_value_obj)
+
+        # print("**")
+        # print(left_value_obj)
+        # print(right_value_obj)
+
         if not self.__compatible_types(
             arith_ast.elem_type, left_value_obj, right_value_obj
         ):
@@ -281,6 +308,15 @@ class Interpreter(InterpreterBase):
             Type.BOOL, x.type() != y.type() or x.value() != y.value()
         )
 
+        #  set up operations on funcs
+        self.op_to_lambda[Type.FUNC] = {}
+        self.op_to_lambda[Type.FUNC]["=="] = lambda x, y: Value(
+            Type.BOOL, x.type() == y.type() and x.value() == y.value()
+        )
+        self.op_to_lambda[Type.FUNC]["!="] = lambda x, y: Value(
+            Type.BOOL, x.type() != y.type() or x.value() != y.value()
+        )
+
     def __do_if(self, if_ast):
         cond_ast = if_ast.get("condition")
         result = self.__eval_expr(cond_ast)
@@ -325,6 +361,3 @@ class Interpreter(InterpreterBase):
             return (ExecStatus.RETURN, Interpreter.NIL_VALUE)
         value_obj = copy.deepcopy(self.__eval_expr(expr_ast))
         return (ExecStatus.RETURN, value_obj)
-
-
-i = Interpreter()
