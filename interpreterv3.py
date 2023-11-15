@@ -96,6 +96,9 @@ class Interpreter(InterpreterBase):
             return self.__call_input(call_node)
         if func_name == "inputs":
             return self.__call_input(call_node)
+    
+        if (self.env.get(func_name) is not None):
+            func_name = self.env.get(func_name).get("name")
 
         actual_args = call_node.get("args")
         func_ast = self.__get_func_by_name(func_name, len(actual_args))
