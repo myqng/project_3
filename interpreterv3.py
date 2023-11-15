@@ -131,7 +131,6 @@ class Interpreter(InterpreterBase):
         self.env.push()
         for formal_ast, actual_ast in zip(formal_args, actual_args):
             result = copy.deepcopy(self.__eval_expr(actual_ast))
-            print("result: " +str(result.value()))
             arg_name = formal_ast.get("name")
             self.env.create(arg_name, result)
         _, return_val = self.__run_statements(func_ast.get("statements"))
@@ -213,20 +212,11 @@ class Interpreter(InterpreterBase):
         left_value_obj = self.__eval_expr(arith_ast.get("op1"))
         right_value_obj = self.__eval_expr(arith_ast.get("op2"))
 
-        # print("**")
-        # print(left_value_obj)
-        # print(right_value_obj)
-        # print(type(left_value_obj).__name__ == "Element")
-
         # Create value objects if var is a function
         if (type(left_value_obj).__name__ != "Value"):
                 left_value_obj = create_value(left_value_obj)
         if (type(right_value_obj).__name__ != "Value"):
                 right_value_obj = create_value(right_value_obj)
-
-        # print("**")
-        # print(left_value_obj)
-        # print(right_value_obj)
 
         if not self.__compatible_types(
             arith_ast.elem_type, left_value_obj, right_value_obj
@@ -235,11 +225,38 @@ class Interpreter(InterpreterBase):
                 ErrorType.TYPE_ERROR,
                 f"Incompatible types for {arith_ast.elem_type} operation",
             )
+        
+        if arith_ast.elem_type in ["==", "!=", "||", "&&", "!"]:
+            if (left_value_obj.type() == Type.BOOL and right_value_obj.type() == Type.INT):
+                if (right_value_obj.value() != 0):
+                    right_value_obj = Value(Type.BOOL, True)
+                else:
+                    right_value_obj = Value(Type.BOOL, False)
+            elif (left_value_obj.type() == Type.INT and right_value_obj.type() == Type.BOOL):
+                if (left_value_obj.value() != 0):
+                    left_value_obj = Value(Type.BOOL, True)
+                else:
+                    left_value_obj = Value(Type.BOOL, False)
+        
+        elif arith_ast.elem_type in ["+", "-", "*", "/"]:
+            if (left_value_obj.type() == Type.BOOL):
+                if (left_value_obj.value()):
+                    left_value_obj = Value(Type.INT, 1)
+                else:
+                    left_value_obj = Value(Type.INT, 0)
+                
+            if right_value_obj.type() == Type.BOOL:
+                if (right_value_obj.value()):
+                    right_value_obj = Value(Type.INT, 1)
+                else:
+                    right_value_obj = Value(Type.INT, 0)
+
         if arith_ast.elem_type not in self.op_to_lambda[left_value_obj.type()]:
             super().error(
                 ErrorType.TYPE_ERROR,
                 f"Incompatible operator {arith_ast.elem_type} for type {left_value_obj.type()}",
-            )
+            )   
+                
         f = self.op_to_lambda[left_value_obj.type()][arith_ast.elem_type]
         # print("here eval")
         # print(arith_ast)
@@ -251,10 +268,20 @@ class Interpreter(InterpreterBase):
         # DOCUMENT: allow comparisons ==/!= of anything against anything
         if oper in ["==", "!="]:
             return True
+        if oper in ["+", "-", "*", "/", "&&", "||", "!"]:
+            if obj1.type() == Type.BOOL or obj1.type() == Type.INT:
+                if obj2.type() == Type.BOOL or obj2.type() == Type.INT:
+                    return True
         return obj1.type() == obj2.type()
 
     def __eval_unary(self, arith_ast, t, f):
         value_obj = self.__eval_expr(arith_ast.get("op1"))
+        if (arith_ast.elem_type == Interpreter.NOT_DEF):
+            if (value_obj.type() == Type.INT):
+                if (value_obj.value() != 0):
+                    value_obj = Value(Type.BOOL, True)
+                else:
+                    value_obj = Value(Type.BOOL, False)
         if value_obj.type() != t:
             super().error(
                 ErrorType.TYPE_ERROR,
@@ -344,10 +371,17 @@ class Interpreter(InterpreterBase):
         cond_ast = if_ast.get("condition")
         result = self.__eval_expr(cond_ast)
         if result.type() != Type.BOOL:
-            super().error(
-                ErrorType.TYPE_ERROR,
-                "Incompatible type for if condition",
-            )
+            if result.type() == Type.INT:
+                if result.value() != 0:
+                    result = Value(Type.BOOL, True)
+                else:
+                    result = Value(Type.BOOL, False)
+            else:
+                super().error(
+                    ErrorType.TYPE_ERROR,
+                    "Incompatible type for if condition",
+                )
+        
         if result.value():
             statements = if_ast.get("statements")
             status, return_val = self.__run_statements(statements)
@@ -366,10 +400,16 @@ class Interpreter(InterpreterBase):
         while run_while.value():
             run_while = self.__eval_expr(cond_ast)
             if run_while.type() != Type.BOOL:
-                super().error(
-                    ErrorType.TYPE_ERROR,
-                    "Incompatible type for while condition",
-                )
+                if run_while.type() == Type.INT:
+                    if run_while.value() != 0:
+                        run_while = Value(Type.BOOL, True)
+                    else:
+                        run_while = Value(Type.BOOL, False)
+                else: 
+                    super().error(
+                        ErrorType.TYPE_ERROR,
+                        "Incompatible type for while condition",
+                    )
             if run_while.value():
                 statements = while_ast.get("statements")
                 status, return_val = self.__run_statements(statements)
