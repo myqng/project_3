@@ -30,9 +30,11 @@ class Interpreter(InterpreterBase):
     # into an abstract syntax tree (ast)
     def run(self, program):
         ast = parse_program(program)
+        print(ast)
+        print()
         self.__set_up_function_table(ast)
         self.env = EnvironmentManager()
-        main_func = self.__get_func_by_name("main", 0)
+        main_func = self.__get_func_by_name("main", 0, False)
         self.__run_statements(main_func.get("statements"))
 
     def __set_up_function_table(self, ast):
@@ -44,20 +46,36 @@ class Interpreter(InterpreterBase):
                 self.func_name_to_ast[func_name] = {}
             self.func_name_to_ast[func_name][num_params] = func_def
 
-    def __get_func_by_name(self, name, num_params):
+    def __get_func_by_name(self, name, num_params, called_by_var):
         if name not in self.func_name_to_ast:
             super().error(ErrorType.NAME_ERROR, f"Function {name} not found")
         candidate_funcs = self.func_name_to_ast[name]
         if num_params not in candidate_funcs:
+            if (called_by_var):
+                super().error(
+                    ErrorType.TYPE_ERROR,
+                    f"Function {name} taking {num_params} params not found",
+                )
             super().error(
                 ErrorType.NAME_ERROR,
                 f"Function {name} taking {num_params} params not found",
             )
         return candidate_funcs[num_params]
+    
+    def __get_func_by_name_for_var(self, name):
+        if name not in self.func_name_to_ast:
+            super().error(ErrorType.NAME_ERROR, f"Function {name} not found")
+        candidate_funcs = self.func_name_to_ast[name]
+        if len(candidate_funcs) > 1:
+            super().error(ErrorType.NAME_ERROR, f"Ambiguous function asssignment to variable")
+        # print(f"candidate funcs: {candidate_funcs}")
+
+        return candidate_funcs[list(candidate_funcs.keys())[0]]
 
     def __run_statements(self, statements):
         self.env.push()
         for statement in statements:
+            print("----\nstatement: " + str(statement))
             if self.trace_output:
                 print(statement)
             status = ExecStatus.CONTINUE
@@ -72,37 +90,92 @@ class Interpreter(InterpreterBase):
             elif statement.elem_type == Interpreter.WHILE_DEF:
                 status, return_val = self.__do_while(statement)
 
+            print("\ndictionary after running statement:")
+            self.env.print()
+
             if status == ExecStatus.RETURN:
                 self.env.pop()
                 return (status, return_val)
-
+        
         self.env.pop()
         return (ExecStatus.CONTINUE, Interpreter.NIL_VALUE)
 
     def __call_func(self, call_node):
         func_name = call_node.get("name")
+        called_by_var = False
         if func_name == "print":
             return self.__call_print(call_node)
         if func_name == "inputi":
             return self.__call_input(call_node)
         if func_name == "inputs":
             return self.__call_input(call_node)
+        
+        # print(f"func_name: {func_name}")
+        # print(type(self.env.get(func_name)))
+        if (self.env.get(func_name) is not None):
+            if (type(self.env.get(func_name)).__name__ == "Element" and self.env.get(func_name).elem_type == "func"):
+                func_name = self.env.get(func_name).get("name")
+                called_by_var = True
+            else:
+                super().error(
+                    ErrorType.TYPE_ERROR,
+                    f"Variable {func_name} does not hold a function.",
+                )
 
         actual_args = call_node.get("args")
-        func_ast = self.__get_func_by_name(func_name, len(actual_args))
+        print("actual_args: ")
+        for arg in actual_args:
+            print(arg)
+        print()
+
+        func_ast = self.__get_func_by_name(func_name, len(actual_args), called_by_var)
         formal_args = func_ast.get("args")
+
+        print("formal_args: ")
+        for arg in formal_args:
+            if(arg.elem_type == InterpreterBase.REFARG_DEF):
+                print("is refarg")
+            print(arg)
+        print()
+
         if len(actual_args) != len(formal_args):
+            if (called_by_var):
+                super().error(
+                    ErrorType.TYPE_ERROR,
+                    f"Function {func_ast.get('name')} with {len(actual_args)} args not found",
+                )
             super().error(
                 ErrorType.NAME_ERROR,
                 f"Function {func_ast.get('name')} with {len(actual_args)} args not found",
             )
+        
         self.env.push()
         for formal_ast, actual_ast in zip(formal_args, actual_args):
             result = copy.deepcopy(self.__eval_expr(actual_ast))
+            print("result: " +str(result.value()))
             arg_name = formal_ast.get("name")
             self.env.create(arg_name, result)
         _, return_val = self.__run_statements(func_ast.get("statements"))
+        
+        ref_args = {}
+        for f_arg, a_arg in zip(formal_args, actual_args):
+            if (f_arg.elem_type == InterpreterBase.REFARG_DEF): 
+                print("**")
+                print(f_arg.get("name"))
+                print(a_arg.get("name"))
+                print(self.env.get(a_arg.get("name")).value())
+                if (f_arg.get("name") == a_arg.get("name")):
+                    ref_args[f_arg.get("name")] = self.env.get(f_arg.get("name"))
+                else:
+                    self.env.set(a_arg.get("name"), self.env.get(f_arg.get("name")))
+        
         self.env.pop()
+        
+        print("ref_args dict: " + str(ref_args))
+        for key in ref_args.keys():
+            print (ref_args[key].value())
+            self.env.set(key, ref_args[key])
+        
         return return_val
 
     def __call_print(self, call_ast):
@@ -110,6 +183,7 @@ class Interpreter(InterpreterBase):
         for arg in call_ast.get("args"):
             result = self.__eval_expr(arg)  # result is a Value object
             output = output + get_printable(result)
+        print("*printed by program*:")
         super().output(output)
         return Interpreter.NIL_VALUE
 
@@ -149,6 +223,8 @@ class Interpreter(InterpreterBase):
         if expr_ast.elem_type == InterpreterBase.VAR_DEF:
             var_name = expr_ast.get("name")
             val = self.env.get(var_name)
+            if (var_name in self.func_name_to_ast):
+                val = self.__get_func_by_name_for_var(var_name)
             if val is None:
                 super().error(ErrorType.NAME_ERROR, f"Variable {var_name} not found")
             return val
@@ -164,6 +240,22 @@ class Interpreter(InterpreterBase):
     def __eval_op(self, arith_ast):
         left_value_obj = self.__eval_expr(arith_ast.get("op1"))
         right_value_obj = self.__eval_expr(arith_ast.get("op2"))
+
+        # print("**")
+        # print(left_value_obj)
+        # print(right_value_obj)
+        # print(type(left_value_obj).__name__ == "Element")
+
+        # Create value objects if var is a function
+        if (type(left_value_obj).__name__ != "Value"):
+                left_value_obj = create_value(left_value_obj)
+        if (type(right_value_obj).__name__ != "Value"):
+                right_value_obj = create_value(right_value_obj)
+
+        # print("**")
+        # print(left_value_obj)
+        # print(right_value_obj)
+
         if not self.__compatible_types(
             arith_ast.elem_type, left_value_obj, right_value_obj
         ):
@@ -267,6 +359,15 @@ class Interpreter(InterpreterBase):
             Type.BOOL, x.type() != y.type() or x.value() != y.value()
         )
 
+        #  set up operations on funcs
+        self.op_to_lambda[Type.FUNC] = {}
+        self.op_to_lambda[Type.FUNC]["=="] = lambda x, y: Value(
+            Type.BOOL, x.type() == y.type() and x.value() == y.value()
+        )
+        self.op_to_lambda[Type.FUNC]["!="] = lambda x, y: Value(
+            Type.BOOL, x.type() != y.type() or x.value() != y.value()
+        )
+
     def __do_if(self, if_ast):
         cond_ast = if_ast.get("condition")
         result = self.__eval_expr(cond_ast)
@@ -330,36 +431,28 @@ def main():
     }
     """
         
-    program_source1 = """func main() {
+    program_source1 = """
+    func foo(a){
+        print(a);
+    }
+    
+    func main() {
         y = true;
-        y = !y;
-        x = 5;
-        x = -x + 5 + 9;
-        a = "sweetie ";
-        b = "queen";
-        x = 5;
-
-        print(x);
-        print(y);
-        print(a + b);
-        print(a == b);
+        x = main;
+        foo(x, y);
+        x(10);
+        y(10);
     }
     """
 
-    program_source2 = """func main() {
-       x = 1;
-       if (x == 0){
-            print("x is zero");
-       }else{
-            print("x is non-zero");
-            if (x == 1){
-                x = 2;
-                print(x);
-                return;
-                print("x is now 2");
-            }
-       }
-       return x;
+    program_source2 = """
+    func foo() { return bar; }
+
+    func bar(a,b) { print(a,b); }
+
+    func main() {
+        a = foo();
+        a(10,20);
     }
     """
 
@@ -386,14 +479,25 @@ def main():
     }
     """
 
-    program_source3 = """func main() {
-        x = 10;
-        if (x == 10){
-            return x;
-        }
-        x = 11;
-        return false;
+    program_source3 = """
+    func bar(ref c) {
+        c = c + 1;
+        y = 18;
     }
+
+    func foo(ref a) {
+        a = a + 10;
+        bar(a);
+    }
+
+    func main() {
+        b = 5;
+        y = 9;
+        foo(b);
+        print(b);
+        print(y);
+    }
+
     """
 
     program_source4 = """
@@ -420,14 +524,20 @@ def main():
 
     program_source5 = """
     func main() {
-        x = "string";
-        foo(x);
-        print(x);
+        x = foo;
+        print(x == foo);
+        x = foo();
+        print(x == foo);
+        x("bar");
     }
 
-    func foo(a) {
-        a = 10;
-        print(a);
+    func foo() {
+        print("foo");
+        return bar;
+    }
+
+    func bar(x){
+        print(x);
     }
     """
 
@@ -436,17 +546,9 @@ def main():
         print(a);
     }
 
-    func foo(a, b) {
-        print(a, " ", b);
-    }
-
-    func bar() {
-        print("bar");
-    }
-
     func main() {
-        foo(5);
-        foo(6, 7); 
+        a = foo;
+        a(10);
     }
     """
     program_source7 = """
@@ -491,7 +593,7 @@ def main():
     # this is how you use our parser to parse a valid Brewin program into 
     # an AST:
 
-    i.run(program_source0)
+    i.run(program_source1)
 
 i = Interpreter()
 main()

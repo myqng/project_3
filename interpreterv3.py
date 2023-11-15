@@ -32,7 +32,7 @@ class Interpreter(InterpreterBase):
         ast = parse_program(program)
         self.__set_up_function_table(ast)
         self.env = EnvironmentManager()
-        main_func = self.__get_func_by_name("main", 0)
+        main_func = self.__get_func_by_name("main", 0, False)
         self.__run_statements(main_func.get("statements"))
 
     def __set_up_function_table(self, ast):
@@ -44,11 +44,16 @@ class Interpreter(InterpreterBase):
                 self.func_name_to_ast[func_name] = {}
             self.func_name_to_ast[func_name][num_params] = func_def
 
-    def __get_func_by_name(self, name, num_params):
+    def __get_func_by_name(self, name, num_params, called_by_var):
         if name not in self.func_name_to_ast:
             super().error(ErrorType.NAME_ERROR, f"Function {name} not found")
         candidate_funcs = self.func_name_to_ast[name]
         if num_params not in candidate_funcs:
+            if (called_by_var):
+                super().error(
+                    ErrorType.TYPE_ERROR,
+                    f"Function {name} taking {num_params} params not found",
+                )
             super().error(
                 ErrorType.NAME_ERROR,
                 f"Function {name} taking {num_params} params not found",
@@ -90,35 +95,50 @@ class Interpreter(InterpreterBase):
 
     def __call_func(self, call_node):
         func_name = call_node.get("name")
+        called_by_var = False
         if func_name == "print":
             return self.__call_print(call_node)
         if func_name == "inputi":
             return self.__call_input(call_node)
         if func_name == "inputs":
             return self.__call_input(call_node)
-    
+        
         if (self.env.get(func_name) is not None):
-            func_name = self.env.get(func_name).get("name")
+            if (type(self.env.get(func_name)).__name__ == "Element" and self.env.get(func_name).elem_type == "func"):
+                func_name = self.env.get(func_name).get("name")
+                called_by_var = True
+            else:
+                super().error(
+                    ErrorType.TYPE_ERROR,
+                    f"Variable {func_name} does not hold a function.",
+                )
 
         actual_args = call_node.get("args")
-        func_ast = self.__get_func_by_name(func_name, len(actual_args))
+        func_ast = self.__get_func_by_name(func_name, len(actual_args), called_by_var)
         formal_args = func_ast.get("args")
 
         if len(actual_args) != len(formal_args):
+            if (called_by_var):
+                super().error(
+                    ErrorType.TYPE_ERROR,
+                    f"Function {func_ast.get('name')} with {len(actual_args)} args not found",
+                )
             super().error(
                 ErrorType.NAME_ERROR,
                 f"Function {func_ast.get('name')} with {len(actual_args)} args not found",
             )
+        
         self.env.push()
         for formal_ast, actual_ast in zip(formal_args, actual_args):
             result = copy.deepcopy(self.__eval_expr(actual_ast))
+            print("result: " +str(result.value()))
             arg_name = formal_ast.get("name")
             self.env.create(arg_name, result)
         _, return_val = self.__run_statements(func_ast.get("statements"))
         
         ref_args = {}
         for f_arg, a_arg in zip(formal_args, actual_args):
-            if (f_arg.elem_type == InterpreterBase.REFARG_DEF):
+            if (f_arg.elem_type == InterpreterBase.REFARG_DEF): 
                 if (f_arg.get("name") == a_arg.get("name")):
                     ref_args[f_arg.get("name")] = self.env.get(f_arg.get("name"))
                 else:

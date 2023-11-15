@@ -35,6 +35,6 @@ class EnvironmentManager:
         self.environment.pop()
 
     def print(self):
-        print("----\ndictionary:\n")
-        print(self.environment[0])
-        print("----")
+        for i in self.environment: 
+            for key in i.keys():
+                print("var: " + str(key) + ", value: " + str(i[key]))

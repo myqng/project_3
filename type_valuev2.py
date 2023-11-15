@@ -8,6 +8,7 @@ class Type(Enum):
     BOOL = 2
     STRING = 3
     NIL = 4
+    FUNC = 5
 
 
 # Represents a value, which has a type and its value
@@ -34,6 +35,9 @@ def create_value(val):
         return Value(Type.STRING, val)
     elif isinstance(val, int):
         return Value(Type.INT, val)
+    elif (type(val).__name__ == "Element" and val.elem_type == InterpreterBase.FUNC_DEF):
+        return Value(Type.FUNC, val)
+    
     else:
         raise ValueError("Unknown value type")
 
