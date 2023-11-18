@@ -34,6 +34,8 @@ class Interpreter(InterpreterBase):
         print()
         self.__set_up_function_table(ast)
         self.env = EnvironmentManager()
+        self.lambda_name_to_ast = {}
+        self.lambdas_to_env = {}
         main_func = self.__get_func_by_name("main", 0, False)
         self.__run_statements(main_func.get("statements"))
 
@@ -116,6 +118,9 @@ class Interpreter(InterpreterBase):
             if (type(self.env.get(func_name)).__name__ == "Element" and self.env.get(func_name).elem_type == "func"):
                 func_name = self.env.get(func_name).get("name")
                 called_by_var = True
+            elif (type(self.env.get(func_name)).__name__ == "Element" and self.env.get(func_name).elem_type == "lambda"):
+                print("here")
+                return self.__call_lambda(call_node)
             else:
                 super().error(
                     ErrorType.TYPE_ERROR,
@@ -128,8 +133,11 @@ class Interpreter(InterpreterBase):
             print(arg)
         print()
 
+
         func_ast = self.__get_func_by_name(func_name, len(actual_args), called_by_var)
         formal_args = func_ast.get("args")
+
+        print(f"***func_ast: {func_ast}")
 
         print("formal_args: ")
         for arg in formal_args:
@@ -177,6 +185,74 @@ class Interpreter(InterpreterBase):
             self.env.set(key, ref_args[key])
         
         return return_val
+    
+    def __do_lambda(self, call_node):
+        return call_node
+    
+    def __call_lambda(self, call_node):
+        print("lambduh")
+        lambda_name = call_node.get("name")
+        lambda_func = self.env.get(lambda_name)
+
+        actual_args = call_node.get("args")
+        print("actual_args: ")
+        for arg in actual_args:
+            print(arg)
+        print()
+
+        # func_ast = self.__get_func_by_name(func_name, len(actual_args), called_by_var)
+        formal_args = lambda_func.get("args")
+
+        print("formal_args: ")
+        for arg in formal_args:
+            if(arg.elem_type == InterpreterBase.REFARG_DEF):
+                print("is refarg")
+            print(arg)
+        print()
+
+        # if len(actual_args) != len(formal_args):
+        #     if (called_by_var):
+        #         super().error(
+        #             ErrorType.TYPE_ERROR,
+        #             f"Function {func_ast.get('name')} with {len(actual_args)} args not found",
+        #         )
+        #     super().error(
+        #         ErrorType.NAME_ERROR,
+        #         f"Function {func_ast.get('name')} with {len(actual_args)} args not found",
+        #     )
+        
+        env = self.lambdas_to_env[lambda_name]
+        print(f"env: {env.get_env()}")
+        # env.print()
+        # env = env.get_env()
+        # print(env)
+        # print()
+
+        self.env.push_env(env.get_env())
+
+        for formal_ast, actual_ast in zip(formal_args, actual_args):
+            result = copy.deepcopy(self.__eval_expr(actual_ast))
+            print("result: " +str(result.value()))
+            arg_name = formal_ast.get("name")
+            self.env.create(arg_name, result)
+        _, return_val = self.__run_statements(lambda_func.get("statements"))
+        
+        ref_args = {}
+        for f_arg, a_arg in zip(formal_args, actual_args):
+            if (f_arg.elem_type == InterpreterBase.REFARG_DEF): 
+                if (f_arg.get("name") == a_arg.get("name")):
+                    ref_args[f_arg.get("name")] = self.env.get(f_arg.get("name"))
+                else:
+                    self.env.set(a_arg.get("name"), self.env.get(f_arg.get("name")))
+        
+        self.env.pop()
+        
+        print("ref_args dict: " + str(ref_args))
+        for key in ref_args.keys():
+            print (ref_args[key].value())
+            self.env.set(key, ref_args[key])
+        
+        return return_val
 
     def __call_print(self, call_ast):
         output = ""
@@ -205,11 +281,25 @@ class Interpreter(InterpreterBase):
     def __assign(self, assign_ast):
         var_name = assign_ast.get("name")
         value_obj = self.__eval_expr(assign_ast.get("expression"))
+        if (type(value_obj).__name__ == "Element" and value_obj.elem_type == InterpreterBase.LAMBDA_DEF):
+            print(f"assign_ast: {assign_ast}")
+            self.lambda_name_to_ast[var_name] = value_obj
+            self.lambdas_to_env[var_name] = copy.deepcopy(self.env)
+            print("\ncheckin here: ")
+            self.env.print()
+            print(f"lambda_name_to_ast: {self.lambda_name_to_ast}")
+            print(f"lambdas_to_env: {self.lambdas_to_env}")
+        if (value_obj in self.lambda_name_to_ast):
+            print("it's here!!!")
+            print(f"env of {value_obj}: {self.lambdas_to_env[value_obj]}")
+            self.lambdas_to_env[var_name] = self.lambdas_to_env[value_obj]
+            value_obj = self.lambda_name_to_ast[value_obj]
+        
         self.env.set(var_name, value_obj)
 
     def __eval_expr(self, expr_ast):
-        # print("here expr")
-        # print("type: " + str(expr_ast.elem_type))
+        print("here expr")
+        print("type: " + str(expr_ast.elem_type))
         if expr_ast.elem_type == InterpreterBase.NIL_DEF:
             # print("getting as nil")
             return Interpreter.NIL_VALUE
@@ -223,6 +313,10 @@ class Interpreter(InterpreterBase):
         if expr_ast.elem_type == InterpreterBase.VAR_DEF:
             var_name = expr_ast.get("name")
             val = self.env.get(var_name)
+            print(f"val: {val}")
+            if (type(val).__name__ == "Element" and val.elem_type == InterpreterBase.LAMBDA_DEF):
+                print(f"yayuh, the var name is {var_name} and it has a lambduh")
+                val = var_name
             if (var_name in self.func_name_to_ast):
                 val = self.__get_func_by_name_for_var(var_name)
             if val is None:
@@ -230,6 +324,8 @@ class Interpreter(InterpreterBase):
             return val
         if expr_ast.elem_type == InterpreterBase.FCALL_DEF:
             return self.__call_func(expr_ast)
+        if expr_ast.elem_type == InterpreterBase.LAMBDA_DEF:
+            return self.__do_lambda(expr_ast)
         if expr_ast.elem_type in Interpreter.BIN_OPS:
             return self.__eval_op(expr_ast)
         if expr_ast.elem_type == Interpreter.NEG_DEF:
@@ -248,9 +344,9 @@ class Interpreter(InterpreterBase):
 
         # Create value objects if var is a function
         if (type(left_value_obj).__name__ != "Value"):
-                left_value_obj = create_value(left_value_obj)
+            left_value_obj = create_value(left_value_obj)
         if (type(right_value_obj).__name__ != "Value"):
-                right_value_obj = create_value(right_value_obj)
+            right_value_obj = create_value(right_value_obj)
 
         # print("**")
         # print(left_value_obj)
@@ -264,7 +360,7 @@ class Interpreter(InterpreterBase):
                 f"Incompatible types for {arith_ast.elem_type} operation",
             )
         
-        if arith_ast.elem_type in ["==", "!="]:
+        if arith_ast.elem_type in ["==", "!=", "||", "&&", "!"]:
             if (left_value_obj.type() == Type.BOOL and right_value_obj.type() == Type.INT):
                 if (right_value_obj.value() != 0):
                     right_value_obj = Value(Type.BOOL, True)
@@ -307,7 +403,7 @@ class Interpreter(InterpreterBase):
         # DOCUMENT: allow comparisons ==/!= of anything against anything
         if oper in ["==", "!="]:
             return True
-        if oper in ["+", "-", "*", "/"]:
+        if oper in ["+", "-", "*", "/", "&&", "||", "!"]:
             # if obj1.type() == Type.BOOL and obj2.type() == Type.BOOL:
             #     return True
             if obj1.type() == Type.BOOL or obj1.type() == Type.INT:
@@ -317,6 +413,12 @@ class Interpreter(InterpreterBase):
 
     def __eval_unary(self, arith_ast, t, f):
         value_obj = self.__eval_expr(arith_ast.get("op1"))
+        if (arith_ast.elem_type == Interpreter.NOT_DEF):
+            if (value_obj.type() == Type.INT):
+                if (value_obj.value() != 0):
+                    value_obj = Value(Type.BOOL, True)
+                else:
+                    value_obj = Value(Type.BOOL, False)
         if value_obj.type() != t:
             super().error(
                 ErrorType.TYPE_ERROR,
@@ -557,23 +659,19 @@ def main():
 
     program_source4 = """
     func foo() {
-        x = 0;
-        while (x < 5){
-            x = x - 1;
-            if (x == -5){
-            print(x);
-            print("exiting foo");
-                return 5;
-            }
-        }
-    }
-
-    func bar(a){
-        print(a);
+        b = 5;
+        d = 4;
+        f = lambda(a) { b = a*b; print(b); };
+        return f;
     }
 
     func main() {
-        print(foo());
+        x = foo();
+        c = 20;
+        x(c);
+        z = 5;
+        y = lambda(z) { print(z); };
+        y(10);
     }
     """
 
@@ -648,7 +746,7 @@ def main():
     # this is how you use our parser to parse a valid Brewin program into 
     # an AST:
 
-    i.run(program_source3)
+    i.run(program_source4)
 
 i = Interpreter()
 main()

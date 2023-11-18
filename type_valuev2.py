@@ -35,7 +35,7 @@ def create_value(val):
         return Value(Type.STRING, val)
     elif isinstance(val, int):
         return Value(Type.INT, val)
-    elif (type(val).__name__ == "Element" and val.elem_type == InterpreterBase.FUNC_DEF):
+    elif (type(val).__name__ == "Element" and (val.elem_type == InterpreterBase.FUNC_DEF or val.elem_type == InterpreterBase.LAMBDA_DEF)):
         return Value(Type.FUNC, val)
     
     else:

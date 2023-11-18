@@ -30,6 +30,9 @@ class EnvironmentManager:
     def push(self):
         self.environment.append({})  # [{}] -> [{}, {}]
 
+    def push_env(self, env):
+        self.environment.append(env)
+
     # used when we exit a nested block to discard the environment for that block
     def pop(self):
         self.environment.pop()
@@ -38,3 +41,10 @@ class EnvironmentManager:
         for i in self.environment: 
             for key in i.keys():
                 print("var: " + str(key) + ", value: " + str(i[key]))
+    
+    def get_env(self):
+        env = {}
+        for i in self.environment:
+            if i != {}:
+                env = i
+                return env
