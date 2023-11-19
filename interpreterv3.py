@@ -178,6 +178,7 @@ class Interpreter(InterpreterBase):
         
         env = self.lambdas_to_env[lambda_name]
         self.env.push_env(env.get_env())
+        self.env.push()
 
         for formal_ast, actual_ast in zip(formal_args, actual_args):
             result = copy.deepcopy(self.__eval_expr(actual_ast))
@@ -193,6 +194,7 @@ class Interpreter(InterpreterBase):
                 else:
                     self.env.set(a_arg.get("name"), self.env.get(f_arg.get("name")))
         
+        self.env.pop()
         self.env.pop()
         
         for key in ref_args.keys():
@@ -229,7 +231,7 @@ class Interpreter(InterpreterBase):
         if (type(value_obj).__name__ == "Element" and value_obj.elem_type == InterpreterBase.LAMBDA_DEF):
             self.lambda_name_to_ast[var_name] = value_obj
             self.lambdas_to_env[var_name] = copy.deepcopy(self.env)
-        if (value_obj in self.lambda_name_to_ast):
+        if (value_obj in self.lambda_name_to_ast and self.env.get(value_obj) is None):
             self.lambdas_to_env[var_name] = self.lambdas_to_env[value_obj]
             value_obj = self.lambda_name_to_ast[value_obj]
         
