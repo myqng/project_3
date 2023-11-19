@@ -137,6 +137,12 @@ class Interpreter(InterpreterBase):
         for formal_ast, actual_ast in zip(formal_args, actual_args):
             result = copy.deepcopy(self.__eval_expr(actual_ast))
             arg_name = formal_ast.get("name")
+            if (result in self.lambda_name_to_ast and actual_ast.elem_type == InterpreterBase.VAR_DEF):
+                if (formal_ast.elem_type == InterpreterBase.REFARG_DEF):
+                    self.lambdas_to_env[arg_name] = self.lambdas_to_env[result]
+                else:
+                    self.lambdas_to_env[arg_name] = copy.deepcopy(self.lambdas_to_env[result])
+                result = self.lambda_name_to_ast[result]
             self.env.create(arg_name, result)
         _, return_val = self.__run_statements(func_ast.get("statements"))
         
@@ -485,3 +491,28 @@ class Interpreter(InterpreterBase):
             return (ExecStatus.RETURN, Interpreter.NIL_VALUE)
         value_obj = copy.deepcopy(self.__eval_expr(expr_ast))
         return (ExecStatus.RETURN, value_obj)
+    
+# def main():
+#     #all programs will be provided to your interpreter as a python string,
+#     # just as shown here.
+        
+#     program_source1 = """
+#     func foo(){
+#         a = 5;
+#         return lambda(ref x) { return lambda() {x=x+a;};};
+#     }
+
+#     func main(){
+#         top_ref = foo();
+#         y = 10;
+#         top_ref(10);
+#     }
+#     """
+
+#     # this is how you use our parser to parse a valid Brewin program into 
+#     # an AST:
+
+#     i.run(program_source1)
+
+# i = Interpreter()
+# main()
