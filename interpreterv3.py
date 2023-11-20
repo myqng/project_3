@@ -112,6 +112,8 @@ class Interpreter(InterpreterBase):
                 called_by_var = True
             elif (type(self.env.get(func_name)).__name__ == "Element" and self.env.get(func_name).elem_type == "lambda"):
                 return self.__call_lambda(call_node)
+            elif (type(self.env.get(self.env.get(func_name))).__name__ == "Element" and self.env.get(self.env.get(func_name)).elem_type == "lambda"):
+                return self.__call_lambda(call_node)
             else:
                 super().error(
                     ErrorType.TYPE_ERROR,
@@ -167,20 +169,19 @@ class Interpreter(InterpreterBase):
     def __call_lambda(self, call_node):
         lambda_name = call_node.get("name")
         lambda_func = self.env.get(lambda_name)
+        
+        if (self.env.get(lambda_func) is not None):
+            lambda_name = lambda_func
+            lambda_func = self.env.get(lambda_func)
 
         actual_args = call_node.get("args")
         formal_args = lambda_func.get("args")
 
-        # if len(actual_args) != len(formal_args):
-        #     if (called_by_var):
-        #         super().error(
-        #             ErrorType.TYPE_ERROR,
-        #             f"Function {func_ast.get('name')} with {len(actual_args)} args not found",
-        #         )
-        #     super().error(
-        #         ErrorType.NAME_ERROR,
-        #         f"Function {func_ast.get('name')} with {len(actual_args)} args not found",
-        #     )
+        if len(actual_args) != len(formal_args):
+            super().error(
+                ErrorType.TYPE_ERROR,
+                f"Wrong number of arguments for lambda function",
+            )
         
         env = self.lambdas_to_env[lambda_name]
         self.env.push_env(env.get_env())
@@ -236,7 +237,11 @@ class Interpreter(InterpreterBase):
         value_obj = self.__eval_expr(assign_ast.get("expression"))
         if (type(value_obj).__name__ == "Element" and value_obj.elem_type == InterpreterBase.LAMBDA_DEF):
             self.lambda_name_to_ast[var_name] = value_obj
-            self.lambdas_to_env[var_name] = copy.deepcopy(self.env)
+            if ("unnamed" in self.lambdas_to_env):
+                self.lambdas_to_env[var_name] = self.lambdas_to_env["unnamed"]
+                del self.lambdas_to_env["unnamed"]
+            else:
+                self.lambdas_to_env[var_name] = copy.deepcopy(self.env)
         if (value_obj in self.lambda_name_to_ast and self.env.get(value_obj) is None):
             self.lambdas_to_env[var_name] = self.lambdas_to_env[value_obj]
             value_obj = self.lambda_name_to_ast[value_obj]
@@ -344,12 +349,17 @@ class Interpreter(InterpreterBase):
     def __eval_unary(self, arith_ast, t, f):
         value_obj = self.__eval_expr(arith_ast.get("op1"))
         if (arith_ast.elem_type == Interpreter.NOT_DEF):
-            if (value_obj.type() == Type.INT):
+            if (type(value_obj).__name__ == "Type" and value_obj.type() == Type.INT):
                 if (value_obj.value() != 0):
                     value_obj = Value(Type.BOOL, True)
                 else:
                     value_obj = Value(Type.BOOL, False)
-        if value_obj.type() != t:
+        if (type(value_obj).__name__ == "Type" and value_obj.type() != t):
+            super().error(
+                ErrorType.TYPE_ERROR,
+                f"Incompatible type for {arith_ast.elem_type} operation",
+            )
+        elif (type(value_obj).__name__ == "Element"):
             super().error(
                 ErrorType.TYPE_ERROR,
                 f"Incompatible type for {arith_ast.elem_type} operation",
@@ -490,29 +500,6 @@ class Interpreter(InterpreterBase):
         if expr_ast is None:
             return (ExecStatus.RETURN, Interpreter.NIL_VALUE)
         value_obj = copy.deepcopy(self.__eval_expr(expr_ast))
+        if (type(value_obj).__name__ == "Element" and value_obj.elem_type == InterpreterBase.LAMBDA_DEF):
+            self.lambdas_to_env["unnamed"] = copy.deepcopy(self.env)
         return (ExecStatus.RETURN, value_obj)
-    
-# def main():
-#     #all programs will be provided to your interpreter as a python string,
-#     # just as shown here.
-        
-#     program_source1 = """
-#     func foo(){
-#         a = 5;
-#         return lambda(ref x) { return lambda() {x=x+a;};};
-#     }
-
-#     func main(){
-#         top_ref = foo();
-#         y = 10;
-#         top_ref(10);
-#     }
-#     """
-
-#     # this is how you use our parser to parse a valid Brewin program into 
-#     # an AST:
-
-#     i.run(program_source1)
-
-# i = Interpreter()
-# main()

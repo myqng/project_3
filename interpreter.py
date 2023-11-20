@@ -119,8 +119,10 @@ class Interpreter(InterpreterBase):
                 func_name = self.env.get(func_name).get("name")
                 called_by_var = True
             elif (type(self.env.get(func_name)).__name__ == "Element" and self.env.get(func_name).elem_type == "lambda"):
-                print("here")
                 return self.__call_lambda(call_node)
+            elif (type(self.env.get(self.env.get(func_name))).__name__ == "Element" and self.env.get(self.env.get(func_name)).elem_type == "lambda"):
+                return self.__call_lambda(call_node)
+            
             else:
                 super().error(
                     ErrorType.TYPE_ERROR,
@@ -137,7 +139,7 @@ class Interpreter(InterpreterBase):
         func_ast = self.__get_func_by_name(func_name, len(actual_args), called_by_var)
         formal_args = func_ast.get("args")
 
-        print(f"***func_ast: {func_ast}")
+        # print(f"***func_ast: {func_ast}")
 
         print("formal_args: ")
         for arg in formal_args:
@@ -159,19 +161,29 @@ class Interpreter(InterpreterBase):
         
         self.env.push()
         for formal_ast, actual_ast in zip(formal_args, actual_args):
+            # print(f"actual_ast: {actual_ast}")
             result = copy.deepcopy(self.__eval_expr(actual_ast))
-            print("result: " +str(result.value()))
+            # print(f"result: {result}")
             arg_name = formal_ast.get("name")
+            if (result in self.lambda_name_to_ast and actual_ast.elem_type == InterpreterBase.VAR_DEF):
+                # print(f"result before reassign: {result}")
+                # print(f"result env: {self.lambdas_to_env[result]}")
+                # print(f"arg_name: {arg_name}")
+                if (formal_ast.elem_type == InterpreterBase.REFARG_DEF):
+                    self.lambdas_to_env[arg_name] = self.lambdas_to_env[result]
+                else:
+                    self.lambdas_to_env[arg_name] = copy.deepcopy(self.lambdas_to_env[result])
+                result = self.lambda_name_to_ast[result]
             self.env.create(arg_name, result)
         _, return_val = self.__run_statements(func_ast.get("statements"))
         
         ref_args = {}
         for f_arg, a_arg in zip(formal_args, actual_args):
             if (f_arg.elem_type == InterpreterBase.REFARG_DEF): 
-                print("**")
-                print(f_arg.get("name"))
-                print(a_arg.get("name"))
-                print(self.env.get(a_arg.get("name")).value())
+                # print("**")
+                # print(f_arg.get("name"))
+                # print(a_arg.get("name"))
+                # print(self.env.get(a_arg.get("name")).value())
                 if (f_arg.get("name") == a_arg.get("name")):
                     ref_args[f_arg.get("name")] = self.env.get(f_arg.get("name"))
                 else:
@@ -179,9 +191,9 @@ class Interpreter(InterpreterBase):
         
         self.env.pop()
         
-        print("ref_args dict: " + str(ref_args))
+        # print("ref_args dict: " + str(ref_args))
         for key in ref_args.keys():
-            print (ref_args[key].value())
+            # print (ref_args[key].value())
             self.env.set(key, ref_args[key])
         
         return return_val
@@ -190,49 +202,55 @@ class Interpreter(InterpreterBase):
         return call_node
     
     def __call_lambda(self, call_node):
-        print("lambduh")
         lambda_name = call_node.get("name")
         lambda_func = self.env.get(lambda_name)
+        
+        if (self.env.get(lambda_func) is not None):
+            lambda_name = lambda_func
+            lambda_func = self.env.get(lambda_func)
+
+        # print(f"lambda_name: {lambda_name}")
+        # print(f"lambda_func: {lambda_func}")
 
         actual_args = call_node.get("args")
-        print("actual_args: ")
-        for arg in actual_args:
-            print(arg)
-        print()
+        # print("actual_args: ")
+        # for arg in actual_args:
+        #     print(arg)
+        # print()
 
         # func_ast = self.__get_func_by_name(func_name, len(actual_args), called_by_var)
         formal_args = lambda_func.get("args")
 
-        print("formal_args: ")
-        for arg in formal_args:
-            if(arg.elem_type == InterpreterBase.REFARG_DEF):
-                print("is refarg")
-            print(arg)
-        print()
+        # print("formal_args: ")
+        # for arg in formal_args:
+        #     if(arg.elem_type == InterpreterBase.REFARG_DEF):
+        #         print("is refarg")
+        #     print(arg)
+        # print()
 
-        # if len(actual_args) != len(formal_args):
-        #     if (called_by_var):
-        #         super().error(
-        #             ErrorType.TYPE_ERROR,
-        #             f"Function {func_ast.get('name')} with {len(actual_args)} args not found",
-        #         )
+        if len(actual_args) != len(formal_args):
+            super().error(
+                ErrorType.TYPE_ERROR,
+                f"Wrong number of arguments for lambda function",
+            )
         #     super().error(
         #         ErrorType.NAME_ERROR,
         #         f"Function {func_ast.get('name')} with {len(actual_args)} args not found",
         #     )
         
         env = self.lambdas_to_env[lambda_name]
-        print(f"env: {env.get_env()}")
-        # env.print()
+        print("**")
+        env.print()
         # env = env.get_env()
         # print(env)
         # print()
 
         self.env.push_env(env.get_env())
+        self.env.push()
 
         for formal_ast, actual_ast in zip(formal_args, actual_args):
             result = copy.deepcopy(self.__eval_expr(actual_ast))
-            print("result: " +str(result.value()))
+            # print("result: " +str(result.value()))
             arg_name = formal_ast.get("name")
             self.env.create(arg_name, result)
         _, return_val = self.__run_statements(lambda_func.get("statements"))
@@ -246,10 +264,11 @@ class Interpreter(InterpreterBase):
                     self.env.set(a_arg.get("name"), self.env.get(f_arg.get("name")))
         
         self.env.pop()
+        self.env.pop()
         
-        print("ref_args dict: " + str(ref_args))
+        # print("ref_args dict: " + str(ref_args))
         for key in ref_args.keys():
-            print (ref_args[key].value())
+            # print (ref_args[key].value())
             self.env.set(key, ref_args[key])
         
         return return_val
@@ -282,24 +301,38 @@ class Interpreter(InterpreterBase):
         var_name = assign_ast.get("name")
         value_obj = self.__eval_expr(assign_ast.get("expression"))
         if (type(value_obj).__name__ == "Element" and value_obj.elem_type == InterpreterBase.LAMBDA_DEF):
-            print(f"assign_ast: {assign_ast}")
+            # print(f"assign_ast: {assign_ast}")
             self.lambda_name_to_ast[var_name] = value_obj
-            self.lambdas_to_env[var_name] = copy.deepcopy(self.env)
-            print("\ncheckin here: ")
-            self.env.print()
-            print(f"lambda_name_to_ast: {self.lambda_name_to_ast}")
-            print(f"lambdas_to_env: {self.lambdas_to_env}")
-        if (value_obj in self.lambda_name_to_ast):
-            print("it's here!!!")
-            print(f"env of {value_obj}: {self.lambdas_to_env[value_obj]}")
+            # print(f"is there unnamed...: {self.lambdas_to_env}")
+            # print(f"\n!!assigning env to lambda named {var_name}")
+            if ("unnamed" in self.lambdas_to_env):
+                print("made it here")
+                print(self.lambdas_to_env["unnamed"].get_env())
+                self.lambdas_to_env[var_name] = self.lambdas_to_env["unnamed"]
+                del self.lambdas_to_env["unnamed"]
+            else:
+                self.lambdas_to_env[var_name] = copy.deepcopy(self.env)
+
+            print("this environment: ")
+            print(self.lambdas_to_env[var_name].get_env())
+            # print("\ncheckin here: ")
+            # self.env.print()
+            # print(f"lambda_name_to_ast: {self.lambda_name_to_ast}")
+            # print(f"lambdas_to_env: {self.lambdas_to_env}")
+        if (value_obj in self.lambda_name_to_ast and self.env.get(value_obj) is None):
+            # print(f"**value_obj: {value_obj}")
+            # if (self.env.get(value_obj) is not None):
+            #     print("also it's here...")
+            # print("it's here!!!")
+            # print(f"env of {value_obj}: {self.lambdas_to_env[value_obj]}")
             self.lambdas_to_env[var_name] = self.lambdas_to_env[value_obj]
             value_obj = self.lambda_name_to_ast[value_obj]
         
         self.env.set(var_name, value_obj)
 
     def __eval_expr(self, expr_ast):
-        print("here expr")
-        print("type: " + str(expr_ast.elem_type))
+        # print("here expr")
+        # print("type: " + str(expr_ast.elem_type))
         if expr_ast.elem_type == InterpreterBase.NIL_DEF:
             # print("getting as nil")
             return Interpreter.NIL_VALUE
@@ -313,9 +346,9 @@ class Interpreter(InterpreterBase):
         if expr_ast.elem_type == InterpreterBase.VAR_DEF:
             var_name = expr_ast.get("name")
             val = self.env.get(var_name)
-            print(f"val: {val}")
+            # print(f"val: {val}")
             if (type(val).__name__ == "Element" and val.elem_type == InterpreterBase.LAMBDA_DEF):
-                print(f"yayuh, the var name is {var_name} and it has a lambduh")
+                # print(f"yayuh, the var name is {var_name} and it has a lambduh")
                 val = var_name
             if (var_name in self.func_name_to_ast):
                 val = self.__get_func_by_name_for_var(var_name)
@@ -367,7 +400,6 @@ class Interpreter(InterpreterBase):
                 else:
                     right_value_obj = Value(Type.BOOL, False)
             elif (left_value_obj.type() == Type.INT and right_value_obj.type() == Type.BOOL):
-                print("**here")
                 if (left_value_obj.value() != 0):
                     left_value_obj = Value(Type.BOOL, True)
                 else:
@@ -414,12 +446,17 @@ class Interpreter(InterpreterBase):
     def __eval_unary(self, arith_ast, t, f):
         value_obj = self.__eval_expr(arith_ast.get("op1"))
         if (arith_ast.elem_type == Interpreter.NOT_DEF):
-            if (value_obj.type() == Type.INT):
+            if (type(value_obj).__name__ == "Type" and value_obj.type() == Type.INT):
                 if (value_obj.value() != 0):
                     value_obj = Value(Type.BOOL, True)
                 else:
                     value_obj = Value(Type.BOOL, False)
-        if value_obj.type() != t:
+        if (type(value_obj).__name__ == "Type" and value_obj.type() != t):
+            super().error(
+                ErrorType.TYPE_ERROR,
+                f"Incompatible type for {arith_ast.elem_type} operation",
+            )
+        elif (type(value_obj).__name__ == "Element"):
             super().error(
                 ErrorType.TYPE_ERROR,
                 f"Incompatible type for {arith_ast.elem_type} operation",
@@ -564,48 +601,48 @@ class Interpreter(InterpreterBase):
         if expr_ast is None:
             return (ExecStatus.RETURN, Interpreter.NIL_VALUE)
         value_obj = copy.deepcopy(self.__eval_expr(expr_ast))
+        if (type(value_obj).__name__ == "Element" and value_obj.elem_type == InterpreterBase.LAMBDA_DEF):
+            self.lambdas_to_env["unnamed"] = copy.deepcopy(self.env)
+            print(f"self.lambdas lalala")
+            print(self.lambdas_to_env["unnamed"].print())
+            print("returning unnamed lambda")
         return (ExecStatus.RETURN, value_obj)
     
 def main():
     #all programs will be provided to your interpreter as a python string,
     # just as shown here.
 
-    program_source0 = """func main() {
-        x = 5;
-        x = -x + 5 + 9;
-        y = true;
-        y = !y;
-        a = "sweetie ";
-        b = "queen ";
-        x = 5;
-
-        print(x);
-        print(y);
+    program_source0 = """
+    func main() {
+        f = main;
+        f = !f;
     }
     """
         
     program_source1 = """
-    func foo(a){
-        print(a);
+    func foo(f1, ref f2){
+        f1();
+        f2();
     }
     
     func main() {
-        y = true;
-        x = main;
-        foo(x, y);
-        x(10);
-        y(10);
+        x = 0;
+        lam1 = lambda() { x = x + 1; print(x); };
+        lam2 = lambda() { x = x + 1; print(x); };
+        foo(lam1, lam2);
+        lam1();
+        lam2();
     }
     """
 
     program_source2 = """
-    func foo() { return bar; }
-
-    func bar(a,b) { print(a,b); }
+    func foo(ref x) {
+        x();
+    }
 
     func main() {
-        a = foo();
-        a(10,20);
+    a = lambda() { print("hi"); };
+    foo(a);
     }
     """
 
@@ -658,20 +695,10 @@ def main():
     """
 
     program_source4 = """
-    func foo() {
-        b = 5;
-        d = 4;
-        f = lambda(a) { b = a*b; print(b); };
-        return f;
-    }
-
     func main() {
-        x = foo();
-        c = 20;
-        x(c);
-        z = 5;
-        y = lambda(z) { print(z); };
-        y(10);
+        b = 3;
+        m = lambda(a) { b = a*b; print(b); };
+        m(4, 5);
     }
     """
 
@@ -746,7 +773,7 @@ def main():
     # this is how you use our parser to parse a valid Brewin program into 
     # an AST:
 
-    i.run(program_source4)
+    i.run(program_source0)
 
 i = Interpreter()
 main()

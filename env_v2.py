@@ -40,11 +40,17 @@ class EnvironmentManager:
     def print(self):
         for i in self.environment: 
             for key in i.keys():
-                print("var: " + str(key) + ", value: " + str(i[key]))
+                if (type(i[key]).__name__ == "Value"):
+                    val = i[key].value()
+                else:
+                    val = i[key]
+                print(f"var: {key}, value: {val}")
     
     def get_env(self):
         env = {}
         for i in self.environment:
             if i != {}:
-                env = i
-                return env
+                for key in i.keys():
+                    env[key] = i[key]
+        return env
+        # return self.environment
